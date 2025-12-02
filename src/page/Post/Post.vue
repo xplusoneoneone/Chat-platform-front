@@ -38,6 +38,69 @@
               <img :src="image" :alt="`图片 ${index + 1}`" />
             </div>
           </div>
+          
+          <!-- 点赞和评论操作栏 -->
+          <div class="post-actions">
+            <button 
+              class="action-btn like-btn" 
+              @click="toggleLike(post)"
+            >
+              <img 
+                :src="getLikeIcon(typeof post.id === 'string' ? Number(post.id) : post.id)" 
+                alt="点赞" 
+                class="action-icon"
+              />
+            </button>
+            <button 
+              class="action-btn comment-btn" 
+              @click="toggleComment(typeof post.id === 'string' ? Number(post.id) : post.id)"
+            >
+              <img 
+                src="/src/static/icon/评论.png" 
+                alt="评论" 
+                class="action-icon"
+              />
+            </button>
+          </div>
+          
+          <!-- 评论区域 -->
+          <Transition name="slide-down">
+            <div v-if="expandedComments.has(typeof post.id === 'string' ? Number(post.id) : post.id)" class="comment-section">
+              <!-- 评论输入框 -->
+              <div class="comment-input-wrapper">
+              <input
+                :value="commentInputs[typeof post.id === 'string' ? Number(post.id) : post.id] || ''"
+                @input="(e) => { const id = typeof post.id === 'string' ? Number(post.id) : post.id; commentInputs[id] = (e.target as HTMLInputElement).value }"
+                type="text"
+                placeholder="写评论..."
+                class="comment-input"
+                @keyup.enter="submitComment(typeof post.id === 'string' ? Number(post.id) : post.id)"
+              />
+              <button 
+                class="comment-submit-btn"
+                @click="submitComment(typeof post.id === 'string' ? Number(post.id) : post.id)"
+              >
+                  发送
+                </button>
+              </div>
+              
+              <!-- 评论列表 -->
+              <div class="comment-list">
+                <div
+                  v-for="comment in getCommentList(typeof post.id === 'string' ? Number(post.id) : post.id)"
+                  :key="comment.id"
+                  class="comment-item"
+                >
+                  <div class="comment-user">{{ comment.user?.username || '用户' }}</div>
+                  <div class="comment-content">{{ comment.content }}</div>
+                  <div class="comment-time">{{ formatTime(comment.createTime) }}</div>
+                </div>
+                <div v-if="getCommentList(typeof post.id === 'string' ? Number(post.id) : post.id).length === 0" class="no-comments">
+                  暂无评论
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
         
         <!-- 加载更多提示 -->
@@ -77,7 +140,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getPostList, type PostItem } from '@/Api/Post/Post'
+import { getPostList, likePost, unlikePost, commentPost, getComments as fetchComments, type PostItem, type CommentItem } from '@/Api/Post/Post'
 
 const posts = ref<PostItem[]>([])
 const loading = ref(false)
@@ -92,6 +155,18 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const noMore = ref(false)
 const isLoading = ref(false)
+
+// 点赞状态管理
+const likedPosts = ref<Set<number>>(new Set())
+
+// 评论展开状态
+const expandedComments = ref<Set<number>>(new Set())
+
+// 评论输入框内容
+const commentInputs = ref<Record<number, string>>({})
+
+// 评论数据
+const comments = ref<Record<number, CommentItem[]>>({})
 
 // 获取用户ID（从 localStorage 或登录信息中获取，这里暂时使用示例值）
 const getUserId = (): string | undefined => {
@@ -144,6 +219,16 @@ const loadPosts = async (isLoadMore = false) => {
       
     }))
     console.log('newPosts：', newPosts);
+    
+    // 根据 isLike 字段初始化点赞状态
+    newPosts.forEach(post => {
+      const postId = typeof post.id === 'string' ? Number(post.id) : post.id
+      if (post.isLike) {
+        likedPosts.value.add(postId)
+      } else {
+        likedPosts.value.delete(postId)
+      }
+    })
     
     if (isLoadMore) {
       // 追加新数据
@@ -224,6 +309,170 @@ const previewPrev = () => {
 const previewNext = () => {
   if (previewIndex.value !== null && previewImages.value && previewIndex.value < previewImages.value.length - 1) {
     previewIndex.value++
+  }
+}
+
+// 获取点赞图标
+const getLikeIcon = (postId: number): string => {
+  return likedPosts.value.has(postId) 
+    ? '/src/static/icon/已点赞.png' 
+    : '/src/static/icon/点赞.png'
+}
+
+// 切换点赞状态
+const toggleLike = async (post: PostItem) => {
+  const postId = typeof post.id === 'string' ? Number(post.id) : post.id
+  const userId = localStorage.getItem('userId')
+  
+  if (!userId) {
+    console.error('用户未登录')
+    return
+  }
+  
+  const isLiked = likedPosts.value.has(postId)
+  
+  try {
+    if (isLiked) {
+      // 取消点赞
+      await unlikePost({
+        userId: userId,
+        postId: postId
+      })
+      likedPosts.value.delete(postId)
+    } else {
+      // 点赞
+      await likePost({
+        userId: userId,
+        postId: postId
+      })
+      likedPosts.value.add(postId)
+    }
+  } catch (error) {
+    console.error('点赞操作失败:', error)
+    // 如果失败，恢复状态
+    if (isLiked) {
+      likedPosts.value.add(postId)
+    } else {
+      likedPosts.value.delete(postId)
+    }
+  }
+}
+
+// 切换评论展开/收起
+const toggleComment = async (postId: number | string) => {
+  const id = typeof postId === 'string' ? Number(postId) : postId
+  if (expandedComments.value.has(id)) {
+    expandedComments.value.delete(id)
+  } else {
+    expandedComments.value.add(id)
+    // 如果还没有加载评论，调用接口获取评论列表
+    if (!comments.value[id] || comments.value[id].length === 0) {
+      try {
+        const response = await fetchComments({ postId: id })
+        let commentList: CommentItem[] = []
+        
+        // 根据实际返回的数据结构调整
+        if (response.data && Array.isArray(response.data)) {
+          commentList = response.data
+        } else if (response.list && Array.isArray(response.list)) {
+          commentList = response.list
+        } else if (Array.isArray(response)) {
+          commentList = response
+        }
+        
+        comments.value[id] = commentList
+      } catch (error) {
+        console.error('获取评论列表失败:', error)
+        comments.value[id] = []
+      }
+    }
+  }
+}
+
+// 获取评论列表（用于显示）
+const getCommentList = (postId: number | string): CommentItem[] => {
+  const id = typeof postId === 'string' ? Number(postId) : postId
+  return comments.value[id] || []
+}
+
+// 提交评论
+const submitComment = async (postId: number | string) => {
+  const id = typeof postId === 'string' ? Number(postId) : postId
+  const content = commentInputs.value[id]?.trim()
+  if (!content) return
+  
+  const userId = localStorage.getItem('userId')
+  if (!userId) {
+    console.error('用户未登录')
+    return
+  }
+  
+  try {
+    // 调用后端接口提交评论
+    const response = await commentPost({
+      postId: id,
+      userId: userId,
+      content: content
+    })
+    
+    // 如果后端返回了评论数据，添加到评论列表
+    if (response.data) {
+      const newComment: CommentItem = {
+        id: response.data.id || Date.now(),
+        postId: id,
+        userId: Number(userId),
+        user: response.data.user || {
+          username: '我' // 临时，应该从用户信息获取
+        },
+        content: response.data.content || content,
+        createTime: response.data.createTime || new Date().toISOString()
+      }
+      
+      if (!comments.value[id]) {
+        comments.value[id] = []
+      }
+      comments.value[id].push(newComment)
+    } else {
+      // 如果后端没有返回数据，使用临时数据
+      const newComment: CommentItem = {
+        id: Date.now(),
+        postId: id,
+        userId: Number(userId),
+        user: {
+          username: '我'
+        },
+        content,
+        createTime: new Date().toISOString()
+      }
+      
+      if (!comments.value[id]) {
+        comments.value[id] = []
+      }
+      comments.value[id].push(newComment)
+    }
+    
+    // 提交评论后，重新获取评论列表以确保数据同步
+    try {
+      const commentResponse = await fetchComments({ postId: id })
+      let commentList: CommentItem[] = []
+      
+      if (commentResponse.data && Array.isArray(commentResponse.data)) {
+        commentList = commentResponse.data
+      } else if (commentResponse.list && Array.isArray(commentResponse.list)) {
+        commentList = commentResponse.list
+      } else if (Array.isArray(commentResponse)) {
+        commentList = commentResponse
+      }
+      
+      comments.value[id] = commentList
+    } catch (error) {
+      console.error('刷新评论列表失败:', error)
+    }
+    
+    // 清空输入框
+    commentInputs.value[id] = ''
+  } catch (error) {
+    console.error('评论失败:', error)
   }
 }
 
@@ -363,6 +612,139 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.post-actions {
+  display: flex;
+  gap: 24px;
+  padding: 12px 0;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 12px;
+}
+
+.action-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.action-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.action-btn:active {
+  opacity: 0.7;
+}
+
+.comment-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.comment-input-wrapper {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.comment-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 20px;
+  font-size: 14px;
+  outline: none;
+  background: #f8f9fa;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.comment-input:focus {
+  border-color: #667eea;
+  background: white;
+}
+
+.comment-submit-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.comment-submit-btn:active {
+  opacity: 0.8;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.comment-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.comment-item:last-child {
+  border-bottom: none;
+}
+
+.comment-user {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.comment-content {
+  font-size: 14px;
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.comment-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.no-comments {
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+  padding: 20px 0;
+}
+
+/* 展开动画 */
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.3s ease;
+  max-height: 1000px;
+  overflow: hidden;
+}
+
+.slide-down-enter-from,
+.slide-down-leave-to {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 0;
 }
 
 .preview-modal {
