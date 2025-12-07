@@ -85,6 +85,18 @@
         ></textarea>
         <div class="char-count">{{ formData.signature?.length || 0 }}/50</div>
       </div>
+      
+      <!-- 地区 -->
+      <div class="form-section">
+        <label class="section-label">地区</label>
+        <input
+          v-model="formData.location"
+          type="text"
+          placeholder="请输入所在地区"
+          class="form-input"
+          maxlength="50"
+        />
+      </div>
     </div>
     
     <div v-if="message" :class="['message', messageType]">
@@ -97,6 +109,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getUserInfo, updateUserInfo, type UserInfo } from '@/Api/User/User'
+import { normalizeAvatarPath } from '@/utils/avatar'
 
 const router = useRouter()
 const avatarInputRef = ref<HTMLInputElement | null>(null)
@@ -111,35 +124,22 @@ const avatarPath = ref('') // 保存时使用的绝对路径
 const formData = reactive({
   username: '',
   signature: '',
-  sex: 'male'
+  sex: 'male',
+  location: ''
 })
 
 // 处理头像路径，转换为显示路径格式 /public/image/文件名
+// 保留 blob URL 和 http URL 的处理，用于预览
 const getDisplayAvatarPath = (path: string): string => {
   if (!path) return ''
   
-  // 如果是 blob URL 或 http URL，直接返回
+  // 如果是 blob URL 或 http URL，直接返回（用于预览）
   if (path.startsWith('blob:') || path.startsWith('http://') || path.startsWith('https://')) {
     return path
   }
   
-  // 去掉 /user/ 前缀（如果存在）
-  let normalizedPath = path.replace(/^\/?user\//, '')
-  
-  // 如果路径是 image\文件名 或 image/文件名，转换为 /public/image/文件名
-  if (normalizedPath.startsWith('image\\') || normalizedPath.startsWith('image/')) {
-    const fileName = normalizedPath.replace(/^image[\\\/]/, '')
-    return `/public/image/${fileName}`
-  }
-  
-  // 如果已经是 /public/image/ 格式，直接返回
-  if (normalizedPath.startsWith('/public/image/')) {
-    return normalizedPath
-  }
-  
-  // 其他情况，尝试提取文件名
-  const fileName = normalizedPath.split(/[\\\/]/).pop() || normalizedPath
-  return `/public/image/${fileName}`
+  // 使用统一的工具函数处理其他路径
+  return normalizeAvatarPath(path)
 }
 
 // 从 localStorage 加载用户信息
@@ -150,12 +150,14 @@ const loadUserInfo = () => {
       const info = JSON.parse(stored)
       formData.username = info.username || ''
       formData.signature = info.signature || ''
+      formData.location = info.location || ''
       // 显示路径使用 /public/image/ 格式
       const displayPath = getDisplayAvatarPath(info.avatar || '')
       avatar.value = displayPath
       // 保存路径保持原样（image\文件名）
       avatarPath.value = info.avatar || ''
       formData.sex = info.sex || info.gender || 'male'
+      formData.location = info.location || ''
     }
   } catch (e) {
     console.error('加载用户信息失败:', e)
@@ -210,7 +212,8 @@ const handleSave = async () => {
       username: formData.username,
       signature: formData.signature,
       sex: formData.sex,
-      avatar: avatarPath.value || avatar.value
+      avatar: avatarPath.value || avatar.value,
+      location: formData.location
     })
     
     // 更新 localStorage 中的用户信息
@@ -219,6 +222,7 @@ const handleSave = async () => {
       username: formData.username,
       signature: formData.signature,
       sex: formData.sex,
+      location: formData.location,
       gender: formData.sex, // 兼容旧字段
       avatar: response.data?.avatar || avatarPath.value || avatar.value
     }

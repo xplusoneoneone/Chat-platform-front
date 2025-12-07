@@ -2,7 +2,7 @@
  * @Author: 徐佳德 1404577549@qq.com
  * @Date: 2025-11-30 16:28:32
  * @LastEditors: 徐佳德 1404577549@qq.com
- * @LastEditTime: 2025-12-02 19:15:03
+ * @LastEditTime: 2025-12-03 12:05:55
  * @FilePath: \chat\src\page\Post\Post.vue
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
@@ -19,10 +19,8 @@
           class="post-item"
         >
           <div class="post-header">
-            <div class="user-info">
-              <img class="avatar" :src="post.user?.avatar" alt="头像"></img>
-                <span v-if="!post.user?.avatar">{{ post.user?.username || post.userId }}</span>
-              </img>
+            <div class="user-info" @click="goToUserDetail(post.userId || post.user?.id)">
+              <img class="avatar" :src="getDisplayAvatarPath(post.user?.avatar)" alt="头像" />
               <div class="user-name">{{ post.user?.username || `用户 ${post.userId}` }}</div>
             </div>
             <div class="post-time">{{ formatTime(post.createTime) }}</div>
@@ -35,7 +33,7 @@
               class="image-item"
               @click="previewImage(post.images!, index)"
             >
-              <img :src="image" :alt="`图片 ${index + 1}`" />
+              <img :src="convertImagePath(image)" :alt="`图片 ${index + 1}`" />
             </div>
           </div>
           
@@ -140,7 +138,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { getPostList, likePost, unlikePost, commentPost, getComments as fetchComments, type PostItem, type CommentItem } from '@/Api/Post/Post'
+import { normalizeAvatarPath } from '@/utils/avatar'
+
+const router = useRouter()
 
 const posts = ref<PostItem[]>([])
 const loading = ref(false)
@@ -290,8 +292,43 @@ const formatTime = (time?: string) => {
   return date.toLocaleDateString()
 }
 
+// 转换图片路径（将本地绝对路径转换为服务器URL）
+const convertImagePath = (img: string | undefined): string => {
+  if (!img) return ''
+  
+  const imgStr = String(img)
+  
+  // 如果已经是完整URL，直接返回
+  if (imgStr.startsWith('http://') || imgStr.startsWith('https://')) {
+    return imgStr
+  }
+  
+  // 如果是本地绝对路径（包含盘符或反斜杠），转换为服务器URL
+  if (imgStr.includes('\\') || imgStr.includes('项目') || imgStr.includes(':')) {
+    // 提取文件名
+    const fileName = imgStr.split(/[/\\]/).pop() || ''
+    if (fileName) {
+      return `image/${fileName}`
+    }
+  }
+  
+  return imgStr
+}
+
+// 获取显示用的头像路径
+const getDisplayAvatarPath = (avatar: string | undefined): string => {
+  return normalizeAvatarPath(avatar)
+}
+
+// 跳转到用户详情页
+const goToUserDetail = (userId: string | number | undefined) => {
+  if (!userId) return
+  router.push(`/user/detail/${userId}`)
+}
+
 const previewImage = (images: string[], index: number) => {
-  previewImages.value = images
+  // 转换图片路径用于预览
+  previewImages.value = images.map(img => convertImagePath(img))
   previewIndex.value = index
 }
 
@@ -551,6 +588,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.user-info:active {
+  opacity: 0.7;
 }
 
 .avatar {

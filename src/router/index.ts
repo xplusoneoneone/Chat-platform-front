@@ -5,8 +5,10 @@ import Post from '@/page/Post/Post.vue'
 import Friend from '@/page/Friend/Friend.vue'
 import User from '@/page/User/User.vue'
 import Chat from '@/page/Chat/Chat.vue'
+import ChatDetail from '@/page/Chat/ChatDetail.vue'
 import AddPost from '@/page/AddPost/AddPost.vue'
 import UpdateInfo from '@/page/User/UpdateInfo.vue'
+import UserDetail from '@/page/User/UserDetail.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -31,6 +33,11 @@ const router = createRouter({
       component: UpdateInfo
     },
     {
+      path: '/user/detail/:userId',
+      name: 'UserDetail',
+      component: UserDetail
+    },
+    {
       path: '/',
       component: MainLayout,
       children: [
@@ -53,6 +60,11 @@ const router = createRouter({
           path: 'chat',
           name: 'Chat',
           component: Chat
+        },
+        {
+          path: 'chat/:friendId',
+          name: 'ChatDetail',
+          component: ChatDetail
         }
       ]
     }

@@ -45,10 +45,12 @@ export async function getUserInfo(userId?: string | number): Promise<GetUserInfo
 
 // 更新用户信息接口
 export interface UpdateUserInfoParams {
+  userId?: string | number
   username?: string
   signature?: string
   sex?: string
   avatar?: string
+  location?: string
 }
 
 export interface UpdateUserInfoResponse {
@@ -58,14 +60,20 @@ export interface UpdateUserInfoResponse {
 
 export async function updateUserInfo(params: UpdateUserInfoParams): Promise<UpdateUserInfoResponse> {
   // 获取 userId
-  const userId = localStorage.getItem('userId')
+  const storedUserId = localStorage.getItem('userId')
+  const userId = params.userId ?? (storedUserId ? Number(storedUserId) : undefined)
+  
+  if (userId === undefined) {
+    throw new Error('userId is required')
+  }
   
   const data = JSON.stringify({
-    userId: userId ? Number(userId) : 0,
-    username: params.username || '',
-    avatar: params.avatar || '',
-    signature: params.signature || '',
-    sex: params.sex || ''
+    userId,
+    username: params.username ?? '',
+    avatar: params.avatar ?? '',
+    signature: params.signature ?? '',
+    sex: params.sex ?? '',
+    location: params.location ?? ''
   })
   
   const config = {
